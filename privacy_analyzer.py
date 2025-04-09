@@ -1,85 +1,69 @@
-# privacy_analyzer_app.py
-
 import streamlit as st
 import spacy
+import os
 import matplotlib.pyplot as plt
-from collections import defaultdict
+from collections import Counter
 
 # Load spaCy model
 nlp = spacy.load("en_core_web_sm")
 
-# Define privacy keywords
-privacy_keywords = {
-    "Data Collection": ["collect", "gather", "record", "store", "log"],
-    "Tracking": ["track", "monitor", "cookie", "beacon"],
-    "Third-Party Sharing": ["third party", "affiliates", "partners", "vendors"],
-    "Location": ["location", "gps", "geolocation"],
-    "Advertising": ["ads", "advertising", "marketing", "promotion"],
-    "Data Sharing": ["share", "sell", "transfer", "disclose"],
-    "Personal Info": ["email", "name", "phone", "address", "birthdate"],
-}
+# Privacy-related keywords (you can expand this list)
+PRIVACY_KEYWORDS = [
+    "data collection", "third-party", "personal information", "cookies",
+    "tracking", "location data", "data sharing", "opt-out", "analytics",
+    "advertising", "consent", "retention", "GDPR", "CCPA", "sale of data",
+    "biometric", "camera", "microphone", "contact list", "SMS", "email",
+    "IP address", "device ID", "profiling"
+]
 
-# Analyze text using keyword matching and spaCy
-def analyze_terms(text):
-    results = defaultdict(list)
-    doc = nlp(text.lower())
+# Title
+st.set_page_config(page_title="App Privacy Analyzer", layout="wide")
+st.title("🔒 App Privacy Analyzer")
 
-    for token in doc:
-        for category, keywords in privacy_keywords.items():
-            for keyword in keywords:
-                if keyword in token.text:
-                    results[category].append(keyword)
+# Upload T&C text file
+uploaded_file = st.file_uploader("Upload the Terms & Conditions file (TXT format)", type=["txt"])
 
-    return results
+if uploaded_file:
+    text = uploaded_file.read().decode("utf-8")
 
-# Generate summary report
-def generate_summary(results):
-    summary = []
-    for category, words in results.items():
-        summary.append(f"{category}: {', '.join(set(words))}")
-    return "\n".join(summary)
+    # Display raw text
+    with st.expander("📄 View Uploaded Terms & Conditions"):
+        st.text_area("Raw Text", text, height=300)
 
-# Risk level calculation
-def calculate_risk(results):
-    score = len(results)
-    if score <= 2:
-        return "Low Risk", "🟢"
-    elif score <= 4:
-        return "Moderate Risk", "🟡"
+    # NLP Processing
+    doc = nlp(text)
+    tokens = [token.text.lower() for token in doc if not token.is_stop and not token.is_punct]
+
+    # Keyword Detection
+    detected_keywords = [word for word in tokens if any(kw in word for kw in PRIVACY_KEYWORDS)]
+    keyword_freq = Counter(detected_keywords)
+
+    # Summary
+    st.subheader("🔍 Privacy Risk Summary")
+    if keyword_freq:
+        total_mentions = sum(keyword_freq.values())
+        st.success(f"✅ Found {total_mentions} potential privacy-related mentions.")
+
+        # Plot
+        fig, ax = plt.subplots()
+        top_k = keyword_freq.most_common(10)
+        labels, values = zip(*top_k)
+        ax.barh(labels, values, color="crimson")
+        ax.set_xlabel("Frequency")
+        ax.set_title("Top Privacy-Related Terms")
+        st.pyplot(fig)
+
+        # Table View
+        with st.expander("📊 View Detailed Keyword Frequency"):
+            st.write({k: v for k, v in top_k})
     else:
-        return "High Risk", "🔴"
+        st.warning("⚠️ No privacy-related keywords found. This may indicate low risk, or vague T&C language.")
 
-# Plot chart
-def plot_results(results):
-    categories = list(results.keys())
-    counts = [len(set(results[cat])) for cat in categories]
-
-    fig, ax = plt.subplots()
-    ax.barh(categories, counts, color="skyblue")
-    ax.set_xlabel("Keyword Hits")
-    ax.set_title("Privacy Risk Breakdown")
-    st.pyplot(fig)
-
-# Streamlit UI
-st.set_page_config(page_title="App Privacy Analyzer", layout="centered")
-st.title("🔍 App Privacy Analyzer")
-st.markdown("Upload Terms & Conditions text and analyze it for privacy concerns.")
-
-uploaded_file = st.file_uploader("Upload a text file (.txt)", type=["txt"])
-
-if uploaded_file is not None:
-    raw_text = uploaded_file.read().decode("utf-8")
-    st.subheader("T&C Preview")
-    st.text_area("Content", raw_text, height=200)
-
-    if st.button("Analyze Privacy Risk"):
-        with st.spinner("Analyzing..."):
-            results = analyze_terms(raw_text)
-            summary = generate_summary(results)
-            risk, symbol = calculate_risk(results)
-
-        st.success(f"*Risk Level:* {symbol} {risk}")
-        st.markdown("### Analysis Summary")
-        st.markdown(summary)
-        st.markdown("### Visual Breakdown")
-        plot_results(results)          
+    # Optional: Additional analysis (e.g., named entities, sentiment)
+    with st.expander("🧠 Advanced NLP Insights"):
+        persons = [ent.text for ent in doc.ents if ent.label_ == "PERSON"]
+        orgs = [ent.text for ent in doc.ents if ent.label_ == "ORG"]
+        st.write(f"People Mentioned: {set(persons)}")
+        st.write(f"Organizations Mentioned: {set(orgs)}")
+else:
+    st.info("📤 Please upload a T&C file to begin analysis.")
